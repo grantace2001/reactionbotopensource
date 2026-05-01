@@ -1,5 +1,3 @@
-// Load ENV from custom file name
-require('dotenv').config({ path: './something.env' });
 
 const fs = require('fs');
 const {
@@ -8,7 +6,14 @@ const {
   Partials
 } = require('discord.js');
 
-// Create bot client
+// RENDER ENV (no .env file anymore)
+const TOKEN = process.env.TOKEN;
+
+if (!TOKEN) {
+  console.error("Missing TOKEN in environment variables");
+  process.exit(1);
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -20,7 +25,7 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-// Safe DB loader
+// DB helpers
 function loadDB() {
   try {
     return JSON.parse(fs.readFileSync('./database.json', 'utf8'));
@@ -29,12 +34,11 @@ function loadDB() {
   }
 }
 
-// Save DB
 function saveDB(data) {
   fs.writeFileSync('./database.json', JSON.stringify(data, null, 2));
 }
 
-// Ask question helper
+// Ask helper
 async function askQuestion(channel, user, question) {
   await channel.send(question);
 
@@ -51,7 +55,7 @@ async function askQuestion(channel, user, question) {
   return collected.first().content;
 }
 
-// Slash command handler
+// Slash command
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -91,13 +95,13 @@ client.on('interactionCreate', async interaction => {
 
       channel.send("✅ Reaction role created!");
 
-    } catch (err) {
+    } catch {
       channel.send("❌ Setup failed or timed out.");
     }
   }
 });
 
-// Reaction ADD
+// Reaction add
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
 
@@ -115,26 +119,18 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
   if (!role) return;
 
-  // Mode 1 & 4
   if (config.mode === 1 || config.mode === 4) {
     await member.roles.add(role);
-
-    if (config.mode === 1) {
-      user.send(`You received ${role.name}`);
-    }
+    if (config.mode === 1) user.send(`You received ${role.name}`);
   }
 
-  // Mode 2 (sticky)
   if (config.mode === 2) {
     await member.roles.add(role);
     user.send(`Sticky role applied: ${role.name}`);
   }
 
-  // Mode 3 (double react)
   if (config.mode === 3) {
-    if (!reaction.message._doubleReact) {
-      reaction.message._doubleReact = {};
-    }
+    if (!reaction.message._doubleReact) reaction.message._doubleReact = {};
 
     const key = `${user.id}-${config.messageId}`;
 
@@ -155,7 +151,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
   }
 });
 
-// Reaction REMOVE
+// Reaction remove
 client.on('messageReactionRemove', async (reaction, user) => {
   if (user.bot) return;
 
@@ -167,7 +163,6 @@ client.on('messageReactionRemove', async (reaction, user) => {
   );
 
   if (!config) return;
-
   if (config.mode === 2 || config.mode === 3) return;
 
   const member = await reaction.message.guild.members.fetch(user.id);
@@ -178,5 +173,8 @@ client.on('messageReactionRemove', async (reaction, user) => {
   await member.roles.remove(role);
 });
 
-// Start bot
-client.login(process.env.TOKEN);
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.login(TOKEN);

@@ -1,15 +1,16 @@
-require('dotenv').config({ path: './something.env' });
 
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 const config = require('./config.json');
+
+const TOKEN = process.env.TOKEN;
 
 const commands = [
   new SlashCommandBuilder()
     .setName('createroles')
     .setDescription('Create a reaction role')
-].map(command => command.toJSON());
+].map(c => c.toJSON());
 
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
   try {
@@ -20,8 +21,8 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
       { body: commands }
     );
 
-    console.log('✅ Commands registered');
-  } catch (error) {
-    console.error(error);
+    console.log('Commands registered');
+  } catch (err) {
+    console.error(err);
   }
 })();

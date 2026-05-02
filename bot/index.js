@@ -67,8 +67,7 @@ client.on('interactionCreate', async interaction => {
       ephemeral: true
     });
   }
-  await interaction.reply({ content: 'Starting setup...', ephemeral: true });
-    await interaction.reply({ content: 'Starting setup...', ephemeral: true });
+  await interaction.deferReply({ content: 'Starting setup...', ephemeral: true });
 
     const channel = interaction.channel;
     const user = interaction.user;
@@ -100,7 +99,7 @@ client.on('interactionCreate', async interaction => {
 
       await targetMessage.react(emoji);
 
-      channel.send("✅ Reaction role created!");
+      await interaction.followUp("✅ Reaction role created!");
 
     } catch {
       channel.send("❌ Setup failed or timed out.");

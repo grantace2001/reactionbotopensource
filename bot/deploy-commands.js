@@ -3,32 +3,31 @@ require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 const config = require('./config.json');
 
-const TOKEN = process.env.TOKEN;
-
-if (!TOKEN) {
-  console.error("❌ Missing TOKEN in .env");
-  process.exit(1);
-}
-
 const commands = [
   new SlashCommandBuilder()
     .setName('createroles')
     .setDescription('Create a reaction role')
+    .addRoleOption(option =>
+      option.setName('role').setDescription('Role to assign').setRequired(true))
+    .addChannelOption(option =>
+      option.setName('channel').setDescription('Target channel').setRequired(true))
+    .addStringOption(option =>
+      option.setName('message_id').setDescription('Message ID').setRequired(true))
+    .addStringOption(option =>
+      option.setName('emoji').setDescription('Emoji (unicode or custom)').setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('mode')
+        .setDescription('1=normal, 2=sticky, 3=double, 4=silent')
+        .setRequired(true)
+    )
 ].map(c => c.toJSON());
 
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
-  try {
-    console.log('🔄 Registering commands...');
-
-    await rest.put(
-      Routes.applicationGuildCommands(config.clientId, config.guildId),
-      { body: commands }
-    );
-
-    console.log('✅ Commands registered successfully');
-  } catch (err) {
-    console.error('❌ Command deploy failed:', err);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(config.clientId, config.guildId),
+    { body: commands }
+  );
+  console.log("✅ Commands deployed");
 })();

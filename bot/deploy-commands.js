@@ -1,8 +1,12 @@
-
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 const config = require('./config.json');
 
 const TOKEN = process.env.TOKEN;
+
+if (!TOKEN) {
+  console.error("Missing TOKEN in environment variables");
+  process.exit(1);
+}
 
 const commands = [
   new SlashCommandBuilder()

@@ -60,6 +60,14 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'createroles') {
+
+      if (!interaction.member.permissions.has('Administrator')) {
+    return interaction.reply({
+      content: "❌ You need Administrator permission to use this command.",
+      ephemeral: true
+    });
+  }
+  await interaction.reply({ content: 'Starting setup...', ephemeral: true });
     await interaction.reply({ content: 'Starting setup...', ephemeral: true });
 
     const channel = interaction.channel;

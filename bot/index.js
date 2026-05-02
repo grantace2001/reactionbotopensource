@@ -17,8 +17,6 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-// ---------------- CLIENT ----------------
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -28,34 +26,20 @@ const client = new Client({
   partials: [
     Partials.Message,
     Partials.Channel,
-    Partials.Reaction,
-    Partials.User
+    Partials.Reaction
   ]
 });
-
-// ---------------- DATABASE ----------------
 
 const DB_PATH = path.join(__dirname, 'database.json');
 
 function loadDB() {
-  try {
-    if (!fs.existsSync(DB_PATH)) return [];
-    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-  } catch (err) {
-    console.error("❌ DB load error:", err);
-    return [];
-  }
+  if (!fs.existsSync(DB_PATH)) return [];
+  return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
 }
 
 function saveDB(data) {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error("❌ DB save error:", err);
-  }
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
-
-// ---------------- UTIL ----------------
 
 function normalizeEmoji(emoji) {
   return emoji.id || emoji.name;
@@ -70,15 +54,59 @@ client.on('interactionCreate', async interaction => {
 
   if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({
-      content: "❌ Administrator permission required.",
+      content: "❌ Administrator required.",
       ephemeral: true
     });
   }
 
-  await interaction.reply({
-    content: "⚠️ Setup via chat questions is disabled in this rebuild.\nManually add entries to database.json.",
-    ephemeral: true
-  });
+  try {
+    const role = interaction.options.getRole('role');
+    const channel = interaction.options.getChannel('channel');
+    const messageId = interaction.options.getString('message_id');
+    const emoji = interaction.options.getString('emoji');
+    const mode = interaction.options.getInteger('mode');
+
+    // Validate mode
+    if (![1,2,3,4].includes(mode)) {
+      return interaction.reply({
+        content: "❌ Mode must be 1-4.",
+        ephemeral: true
+      });
+    }
+
+    // Fetch message
+    const targetChannel = await client.channels.fetch(channel.id);
+    const targetMessage = await targetChannel.messages.fetch(messageId);
+
+    // Save to DB
+    const db = loadDB();
+
+    db.push({
+      roleId: role.id,
+      channelId: channel.id,
+      messageId: messageId,
+      emoji: emoji,
+      mode: mode
+    });
+
+    saveDB(db);
+
+    // React
+    await targetMessage.react(emoji);
+
+    await interaction.reply({
+      content: "✅ Reaction role created successfully.",
+      ephemeral: true
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    await interaction.reply({
+      content: "❌ Failed. Check message ID, emoji, and permissions.",
+      ephemeral: true
+    });
+  }
 });
 
 // ---------------- REACTION ADD ----------------
@@ -105,29 +133,24 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     if (!role) return;
 
-    // MODE HANDLING
-
     switch (config.mode) {
-      case 1: // normal + DM
+      case 1:
         await member.roles.add(role);
         await user.send(`You received ${role.name}`).catch(() => {});
         break;
-
-      case 2: // sticky
+      case 2:
         await member.roles.add(role);
         break;
-
-      case 3: // double react (simplified)
+      case 3:
         await member.roles.add(role);
         break;
-
-      case 4: // silent
+      case 4:
         await member.roles.add(role);
         break;
     }
 
   } catch (err) {
-    console.error("❌ Reaction add error:", err);
+    console.error("Reaction add error:", err);
   }
 });
 
@@ -149,7 +172,6 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
     if (!config) return;
 
-    // sticky & double-react do NOT remove role
     if (config.mode === 2 || config.mode === 3) return;
 
     const guild = reaction.message.guild;
@@ -161,7 +183,7 @@ client.on('messageReactionRemove', async (reaction, user) => {
     await member.roles.remove(role);
 
   } catch (err) {
-    console.error("❌ Reaction remove error:", err);
+    console.error("Reaction remove error:", err);
   }
 });
 
@@ -170,7 +192,5 @@ client.on('messageReactionRemove', async (reaction, user) => {
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
-
-// ---------------- START ----------------
 
 client.login(TOKEN);

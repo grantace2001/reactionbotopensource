@@ -1,10 +1,12 @@
+require('dotenv').config();
+
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 const config = require('./config.json');
 
 const TOKEN = process.env.TOKEN;
 
 if (!TOKEN) {
-  console.error("Missing TOKEN in environment variables");
+  console.error("❌ Missing TOKEN in .env");
   process.exit(1);
 }
 
@@ -18,15 +20,15 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
   try {
-    console.log('Registering commands...');
+    console.log('🔄 Registering commands...');
 
     await rest.put(
       Routes.applicationGuildCommands(config.clientId, config.guildId),
       { body: commands }
     );
 
-    console.log('Commands registered');
+    console.log('✅ Commands registered successfully');
   } catch (err) {
-    console.error(err);
+    console.error('❌ Command deploy failed:', err);
   }
 })();

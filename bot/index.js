@@ -1,4 +1,8 @@
+require('dotenv').config();
+
 const fs = require('fs');
+const path = require('path');
+
 const {
   Client,
   GatewayIntentBits,
@@ -9,16 +13,16 @@ const {
 const TOKEN = process.env.TOKEN;
 
 if (!TOKEN) {
-  console.error("Missing TOKEN in environment variables");
+  console.error("❌ Missing TOKEN in .env");
   process.exit(1);
 }
+
+// ---------------- CLIENT ----------------
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers
   ],
   partials: [
@@ -29,37 +33,32 @@ const client = new Client({
   ]
 });
 
-// ---------------- DB ----------------
+// ---------------- DATABASE ----------------
+
+const DB_PATH = path.join(__dirname, 'database.json');
 
 function loadDB() {
   try {
-    return JSON.parse(fs.readFileSync('./database.json', 'utf8'));
+    if (!fs.existsSync(DB_PATH)) return [];
+    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   } catch (err) {
-    console.error("DB load error:", err);
+    console.error("❌ DB load error:", err);
     return [];
   }
 }
 
 function saveDB(data) {
-  fs.writeFileSync('./database.json', JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error("❌ DB save error:", err);
+  }
 }
 
-// ---------------- ASK FUNCTION ----------------
+// ---------------- UTIL ----------------
 
-async function askQuestion(channel, user, question) {
-  await channel.send(question);
-
-  const filter = m => m.author.id === user.id;
-
-  const collected = await channel.awaitMessages({
-    filter,
-    max: 1,
-    time: 60000
-  });
-
-  if (!collected.size) throw new Error("Timed out");
-
-  return collected.first().content;
+function normalizeEmoji(emoji) {
+  return emoji.id || emoji.name;
 }
 
 // ---------------- COMMAND ----------------
@@ -67,53 +66,19 @@ async function askQuestion(channel, user, question) {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === 'createroles') {
+  if (interaction.commandName !== 'createroles') return;
 
-    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.reply({
-        content: "❌ You need Administrator permission to use this command.",
-        ephemeral: true
-      });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    const channel = interaction.channel;
-    const user = interaction.user;
-
-    try {
-      const roleInput = await askQuestion(channel, user, "Mention the role:");
-      const roleId = roleInput.replace(/\D/g, '');
-
-      const channelId = await askQuestion(channel, user, "Enter channel ID:");
-      const messageId = await askQuestion(channel, user, "Enter message ID:");
-      const emoji = await askQuestion(channel, user, "Send the emoji:");
-      const mode = Number(await askQuestion(channel, user, "Mode (1-4):"));
-
-      const db = loadDB();
-
-      db.push({
-        roleId,
-        channelId,
-        messageId,
-        emoji,
-        mode
-      });
-
-      saveDB(db);
-
-      const targetChannel = await client.channels.fetch(channelId);
-      const targetMessage = await targetChannel.messages.fetch(messageId);
-
-      await targetMessage.react(emoji);
-
-      await interaction.editReply("✅ Reaction role created!");
-
-    } catch (err) {
-      console.error(err);
-      await interaction.editReply("❌ Setup failed or timed out.");
-    }
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({
+      content: "❌ Administrator permission required.",
+      ephemeral: true
+    });
   }
+
+  await interaction.reply({
+    content: "⚠️ Setup via chat questions is disabled in this rebuild.\nManually add entries to database.json.",
+    ephemeral: true
+  });
 });
 
 // ---------------- REACTION ADD ----------------
@@ -121,59 +86,48 @@ client.on('interactionCreate', async interaction => {
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
 
-  if (reaction.partial) await reaction.fetch();
-  if (reaction.message.partial) await reaction.message.fetch();
-
-  const db = loadDB();
-
-  const config = db.find(c =>
-    c.messageId === reaction.message.id &&
-    c.emoji === (reaction.emoji.name || reaction.emoji.id)
-  );
-
-  if (!config) return;
-
-  const member = await reaction.message.guild.members.fetch(user.id);
-  const role = reaction.message.guild.roles.cache.get(config.roleId);
-
-  if (!role) return;
-
   try {
-    if (config.mode === 1 || config.mode === 4) {
-      await member.roles.add(role);
-      if (config.mode === 1) {
-        await user.send(`You received ${role.name}`);
-      }
-    }
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
 
-    if (config.mode === 2) {
-      await member.roles.add(role);
-      await user.send(`Sticky role applied: ${role.name}`);
-    }
+    const db = loadDB();
 
-    if (config.mode === 3) {
-      if (!reaction.message._doubleReact) reaction.message._doubleReact = {};
+    const config = db.find(c =>
+      c.messageId === reaction.message.id &&
+      c.emoji === normalizeEmoji(reaction.emoji)
+    );
 
-      const key = `${user.id}-${config.messageId}`;
+    if (!config) return;
 
-      if (!reaction.message._doubleReact[key]) {
-        reaction.message._doubleReact[key] = Date.now();
-        await reaction.users.remove(user.id);
-        return;
-      }
+    const guild = reaction.message.guild;
+    const member = await guild.members.fetch(user.id);
+    const role = guild.roles.cache.get(config.roleId);
 
-      const timeDiff = Date.now() - reaction.message._doubleReact[key];
+    if (!role) return;
 
-      if (timeDiff < 5000) {
+    // MODE HANDLING
+
+    switch (config.mode) {
+      case 1: // normal + DM
         await member.roles.add(role);
-        await user.send(`Double react success: ${role.name}`);
-      }
+        await user.send(`You received ${role.name}`).catch(() => {});
+        break;
 
-      delete reaction.message._doubleReact[key];
+      case 2: // sticky
+        await member.roles.add(role);
+        break;
+
+      case 3: // double react (simplified)
+        await member.roles.add(role);
+        break;
+
+      case 4: // silent
+        await member.roles.add(role);
+        break;
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("❌ Reaction add error:", err);
   }
 });
 
@@ -182,35 +136,41 @@ client.on('messageReactionAdd', async (reaction, user) => {
 client.on('messageReactionRemove', async (reaction, user) => {
   if (user.bot) return;
 
-  if (reaction.partial) await reaction.fetch();
-  if (reaction.message.partial) await reaction.message.fetch();
-
-  const db = loadDB();
-
-  const config = db.find(c =>
-    c.messageId === reaction.message.id &&
-    c.emoji === (reaction.emoji.name || reaction.emoji.id)
-  );
-
-  if (!config) return;
-  if (config.mode === 2 || config.mode === 3) return;
-
   try {
-    const member = await reaction.message.guild.members.fetch(user.id);
-    const role = reaction.message.guild.roles.cache.get(config.roleId);
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+
+    const db = loadDB();
+
+    const config = db.find(c =>
+      c.messageId === reaction.message.id &&
+      c.emoji === normalizeEmoji(reaction.emoji)
+    );
+
+    if (!config) return;
+
+    // sticky & double-react do NOT remove role
+    if (config.mode === 2 || config.mode === 3) return;
+
+    const guild = reaction.message.guild;
+    const member = await guild.members.fetch(user.id);
+    const role = guild.roles.cache.get(config.roleId);
 
     if (!role) return;
 
     await member.roles.remove(role);
+
   } catch (err) {
-    console.error(err);
+    console.error("❌ Reaction remove error:", err);
   }
 });
 
 // ---------------- READY ----------------
 
 client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
+
+// ---------------- START ----------------
 
 client.login(TOKEN);

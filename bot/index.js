@@ -81,7 +81,6 @@ client.on('interactionCreate', async interaction => {
       const messageId = await askQuestion(channel, user, "Enter message ID:");
       const emoji = await askQuestion(channel, user, "Send the emoji:");
       const mode = await askQuestion(channel, user, "Mode (1-4):");
-      const color = await askQuestion(channel, user, "Color (1-10):");
 
       const db = loadDB();
 
